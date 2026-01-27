@@ -3,8 +3,8 @@ import { GameCanvas } from './components/GameCanvas';
 import { GeminiDirector } from './components/GeminiDirector';
 import { ProfilerOverlay } from './components/ProfilerOverlay';
 import { DEFAULT_PHYSICS_PROFILE, ASSET_ROOT, ANIMATION_MANIFEST } from './constants';
-import { PhysicsProfile, PerformanceStats } from './types';
-import { Info, Settings, AlertTriangle, RefreshCw, Link as LinkIcon, RotateCcw } from 'lucide-react';
+import { PhysicsProfile, PerformanceStats, AnimationKey } from './types';
+import { Info, Settings, AlertTriangle, RefreshCw, Link as LinkIcon, RotateCcw, Upload, FileImage, Trash2, Database, Ruler } from 'lucide-react';
 import { AssetManager } from './services/assetManager';
 
 export default function App() {
@@ -16,6 +16,10 @@ export default function App() {
   // Settings State
   const [assetUrl, setAssetUrl] = useState(ASSET_ROOT);
   const [assetErrors, setAssetErrors] = useState<string[]>([]);
+  const [spriteScale, setSpriteScale] = useState(1.0);
+  
+  // Local Upload State
+  const [selectedAnimKey, setSelectedAnimKey] = useState<AnimationKey>('RUN');
 
   const [perfStats, setPerfStats] = useState<PerformanceStats>({
     fps: 0,
@@ -34,18 +38,15 @@ export default function App() {
 
   const handleReloadAssets = () => {
     let cleanUrl = assetUrl.trim();
-    // Intelligent Fix: If user pastes a file path (ends in .png), strip the filename to get the folder
     if (cleanUrl.match(/\.(png|jpg|jpeg|gif)$/i)) {
         const lastSlashIndex = cleanUrl.lastIndexOf('/');
         if (lastSlashIndex !== -1) {
             cleanUrl = cleanUrl.substring(0, lastSlashIndex);
-            // If they pasted a path inside /run/, strip that too to get root
             if (cleanUrl.endsWith('/run')) {
                  cleanUrl = cleanUrl.substring(0, cleanUrl.lastIndexOf('/'));
             }
         }
     }
-    // Remove trailing slash
     if (cleanUrl.endsWith('/')) {
         cleanUrl = cleanUrl.slice(0, -1);
     }
@@ -53,7 +54,6 @@ export default function App() {
     setAssetUrl(cleanUrl);
     AssetManager.setRoot(cleanUrl);
     
-    // Short delay to let loading start before checking errors
     setTimeout(() => {
         setAssetErrors([...AssetManager.errorLog]);
     }, 500);
@@ -63,6 +63,21 @@ export default function App() {
       setAssetUrl(ASSET_ROOT);
       AssetManager.setRoot(ASSET_ROOT);
       setAssetErrors([]);
+  };
+  
+  const handlePurgeCache = async () => {
+      if(confirm("Delete all locally saved sprites?")) {
+          await AssetManager.purgeCache();
+      }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files && e.target.files.length > 0) {
+          AssetManager.loadFromFiles(selectedAnimKey, e.target.files);
+          // Force a small state update to ensure UI sees the change if needed, 
+          // although canvas pulls from AssetManager directly.
+          setAssetErrors([]); // Clear errors as we are manually overriding
+      }
   };
 
   // Sync error log periodically when settings are open
@@ -76,7 +91,6 @@ export default function App() {
       return () => clearInterval(interval);
   }, [showSettings]);
 
-  // Generate a preview path for the UI
   const getPreviewPath = () => {
       const config = ANIMATION_MANIFEST.RUN;
       const cleanRoot = assetUrl.endsWith('/') ? assetUrl.slice(0, -1) : assetUrl;
@@ -92,6 +106,7 @@ export default function App() {
                 physicsProfile={physicsProfile} 
                 onStatsUpdate={handleStatsUpdate}
                 fpsLimit={fpsLimit}
+                spriteScale={spriteScale}
             />
             
             {/* HUD Overlay: Title */}
@@ -136,7 +151,7 @@ export default function App() {
       {/* Settings Menu Overlay */}
       {showSettings && (
         <div className="absolute inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center">
-            <div className="bg-slate-900 border border-slate-700 p-6 rounded-lg shadow-2xl w-[500px] animate-in fade-in zoom-in-95 duration-200">
+            <div className="bg-slate-900 border border-slate-700 p-6 rounded-lg shadow-2xl w-[500px] max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
                 <div className="flex justify-between items-center mb-6">
                     <h2 className="text-white font-mono font-bold flex items-center gap-2">
                         <Settings size={18} /> SETTINGS
@@ -164,13 +179,77 @@ export default function App() {
                         </div>
                     </div>
 
-                    {/* Asset Debug Section */}
+                    {/* MANUAL UPLOAD SECTION */}
                     <div className="border-t border-slate-700 pt-4">
-                        <label className="text-xs text-slate-400 font-mono mb-2 block flex items-center gap-2">
-                            <LinkIcon size={12} className="text-blue-500"/> ASSET SOURCE ROOT
+                        <div className="flex justify-between items-center mb-2">
+                             <label className="text-xs text-slate-400 font-mono flex items-center gap-2">
+                                <Upload size={12} className="text-green-500"/> LOCAL SPRITE LIBRARY
+                            </label>
+                            <button 
+                                onClick={handlePurgeCache}
+                                className="flex items-center gap-1 text-[10px] text-red-400 hover:text-red-300 bg-red-950/30 px-2 py-1 rounded border border-red-900/50"
+                                title="Delete all local files"
+                            >
+                                <Trash2 size={10} /> PURGE CACHE
+                            </button>
+                        </div>
+                        
+                        <div className="bg-black/50 p-3 rounded border border-slate-800">
+                            <p className="text-[10px] text-slate-500 mb-2">
+                                Files are saved to <span className="text-slate-300">IndexedDB</span> and persist across refreshes.
+                            </p>
+                            
+                            {/* SCALE SLIDER */}
+                            <div className="mb-3">
+                                <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+                                    <span className="flex items-center gap-1"><Ruler size={10}/> SPRITE SCALE ADJUST</span>
+                                    <span className="text-blue-300 font-bold">{Math.round(spriteScale * 100)}%</span>
+                                </div>
+                                <input 
+                                    type="range" 
+                                    min="0.1" 
+                                    max="2.0" 
+                                    step="0.05"
+                                    value={spriteScale}
+                                    onChange={(e) => setSpriteScale(parseFloat(e.target.value))}
+                                    className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                                />
+                                <div className="text-[9px] text-slate-600 mt-1 italic text-center">
+                                    (Applies on top of auto-scaling)
+                                </div>
+                            </div>
+
+                            <div className="flex gap-2 mb-2">
+                                <select 
+                                    value={selectedAnimKey}
+                                    onChange={(e) => setSelectedAnimKey(e.target.value as AnimationKey)}
+                                    className="bg-slate-800 text-white text-xs p-2 rounded border border-slate-700 focus:outline-none"
+                                >
+                                    {Object.keys(ANIMATION_MANIFEST).map(k => (
+                                        <option key={k} value={k}>{k}</option>
+                                    ))}
+                                </select>
+                                <label className="flex-1 bg-blue-700 hover:bg-blue-600 text-white text-xs flex items-center justify-center gap-2 rounded cursor-pointer transition-colors">
+                                    <FileImage size={14} />
+                                    <span>Add/Update Frames</span>
+                                    <input 
+                                        type="file" 
+                                        multiple 
+                                        accept="image/png, image/jpeg" 
+                                        className="hidden" 
+                                        onChange={handleFileUpload}
+                                    />
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Asset URL Section */}
+                    <div className="border-t border-slate-700 pt-4 opacity-75">
+                         <label className="text-xs text-slate-400 font-mono mb-2 block flex items-center gap-2">
+                            <LinkIcon size={12} className="text-blue-500"/> REMOTE ASSET URL (FALLBACK)
                         </label>
                         
-                        {/* Preview Helper */}
                         <div className="mb-2 px-2 py-1 bg-slate-950 rounded border border-slate-800">
                              <div className="text-[10px] text-slate-500 font-mono">NEXT LOAD ATTEMPT:</div>
                              <div className="text-[10px] text-blue-300 font-mono truncate" title={getPreviewPath()}>
@@ -202,9 +281,6 @@ export default function App() {
                             </button>
                         </div>
                         
-                        <label className="text-xs text-slate-500 font-mono mb-2 block flex items-center gap-2 mt-4">
-                            <AlertTriangle size={12} className={assetErrors.length > 0 ? "text-amber-500" : "text-slate-600"}/> LOG
-                        </label>
                         <div className="bg-black/50 rounded p-2 h-24 overflow-y-auto font-mono text-[10px] text-red-300 border border-slate-800">
                             {assetErrors.length === 0 ? (
                                 <span className="text-slate-500 italic">System Normal.</span>

@@ -7,6 +7,7 @@ import { GAME_CONFIG, COLORS, ANIMATION_MANIFEST } from '../constants';
 interface GameCanvasProps {
   physicsProfile: PhysicsProfile;
   fpsLimit: number | 'max';
+  spriteScale: number; // NEW PROP
   onStatsUpdate?: (stats: PerformanceStats) => void;
 }
 
@@ -17,7 +18,7 @@ const approach = (val: number, target: number, maxMove: number): number => {
 
 const dist = (v1: Vector2, v2: Vector2) => Math.sqrt(Math.pow(v2.x - v1.x, 2) + Math.pow(v2.y - v1.y, 2));
 
-export const GameCanvas: React.FC<GameCanvasProps> = ({ physicsProfile, fpsLimit, onStatsUpdate }) => {
+export const GameCanvas: React.FC<GameCanvasProps> = ({ physicsProfile, fpsLimit, spriteScale, onStatsUpdate }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const inputSystem = useRef<InputSystem>(new InputSystem());
   
@@ -540,7 +541,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ physicsProfile, fpsLimit
     };
     animationId = requestAnimationFrame(loop);
     return () => { cancelAnimationFrame(animationId); inputSystem.current.cleanup(); };
-  }, [physicsProfile, fpsLimit]); // Re-init loop if FPS limit changes
+  }, [physicsProfile, fpsLimit, spriteScale]); // Re-init loop if props change
 
   // ----------------------------------------------------------------------
   // RENDER PIPELINE (PARALLAX)
@@ -704,12 +705,24 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ physicsProfile, fpsLimit
           // Scale X for facing (Sprites usually face Right by default)
           ctx.scale(p.facingRight ? 1 : -1, 1);
           
+          // SMART SCALING
+          // 1. Auto-Detect: If image is high-res (e.g. > 150px tall), scale it down to match player height visually (~100px)
+          let autoScale = 1.0;
+          if (sprite.height > 150) {
+              const TARGET_VISUAL_HEIGHT = 100; // slightly taller than 64px hitbox
+              autoScale = TARGET_VISUAL_HEIGHT / sprite.height;
+          }
+
+          // 2. Apply Manual Overrides
+          const finalScale = autoScale * spriteScale;
+
           // Draw Sprite (Centered at bottom feet)
-          // Assuming sprites are reasonably sized, or use source rects if spritesheets (but we use individual files here)
-          // Adjust offset based on your specific PNG dimensions. 
-          // For now, drawing centered on X, anchored at bottom Y.
-          const scale = 1.0; // Adjust if sprites are too big/small
-          ctx.drawImage(sprite, -sprite.width/2 * scale, -sprite.height * scale, sprite.width * scale, sprite.height * scale);
+          ctx.drawImage(sprite, 
+              -sprite.width/2 * finalScale, 
+              -sprite.height * finalScale, 
+              sprite.width * finalScale, 
+              sprite.height * finalScale
+          );
           
           ctx.restore();
 
