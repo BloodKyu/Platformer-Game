@@ -1,0 +1,5 @@
+{
+  "name": "Project YUI: Foundry Run",
+  "description": "A high-performance 2.5D modular platformer MVP featuring decoupled movement physics and a Gemini-powered Game Director.",
+  "requestFramePermissions": []
+}
