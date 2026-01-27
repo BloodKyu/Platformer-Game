@@ -66,7 +66,7 @@ export const ANIMATION_MANIFEST: Record<AnimationKey, {
   pad?: number;      // Number of digits for zero-padding (e.g., 3 for '001')
   startAt?: number;  // Starting index number (e.g., 1 for '001')
 }> = {
-  // Corrected path: assets/animations/run/YuiRun_001.png
+  // Configured to match: run/YuiRun_001.png
   RUN: { 
     folder: 'run', 
     prefix: 'YuiRun_', 
@@ -86,4 +86,5 @@ export const ANIMATION_MANIFEST: Record<AnimationKey, {
   WALL_SLIDE: { folder: 'wall', prefix: 'wall_', count: 2, frameDelay: 10, loop: true },
 };
 
-export const ASSET_ROOT = 'assets/animations';
+// Use Raw GitHub User Content directly
+export const ASSET_ROOT = 'https://raw.githubusercontent.com/BloodKyu/Platformer-Game/main/public/assets/animations';
