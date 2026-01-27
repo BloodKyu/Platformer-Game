@@ -1,7 +1,8 @@
 import React, { useEffect, useRef } from 'react';
-import { PhysicsProfile, GameState, InputCommand, PlayerState, Platform, Vector2, PerformanceStats, PointOfInterest, Enemy } from '../types';
+import { PhysicsProfile, GameState, InputCommand, PlayerState, Platform, Vector2, PerformanceStats, PointOfInterest, Enemy, AnimationKey } from '../types';
 import { InputSystem } from '../services/inputSystem';
-import { GAME_CONFIG, COLORS } from '../constants';
+import { AssetManager } from '../services/assetManager';
+import { GAME_CONFIG, COLORS, ANIMATION_MANIFEST } from '../constants';
 
 interface GameCanvasProps {
   physicsProfile: PhysicsProfile;
@@ -32,6 +33,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ physicsProfile, fpsLimit
       canDoubleJump: true,
       isAttacking: false,
       facingRight: true,
+      activeAnim: 'IDLE',
+      animFrame: 0,
+      animTimer: 0,
       dashTimer: 0,
       dashCooldownTimer: 0,
       attackTimer: 0,
@@ -90,6 +94,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ physicsProfile, fpsLimit
       lastDrawTime: 0 
   });
 
+  useEffect(() => {
+    // Start loading assets on mount
+    AssetManager.init();
+  }, []);
+
   // ----------------------------------------------------------------------
   // PHYSICS ENGINE (FLUID UPDATE - FIXED 60HZ)
   // ----------------------------------------------------------------------
@@ -120,6 +129,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ physicsProfile, fpsLimit
         player.attackTimer = profile.attackDurationFrames;
         player.attackCooldownTimer = profile.attackCooldownFrames;
         
+        // Reset animation for attack to ensure it plays from start
+        player.activeAnim = 'ATTACK';
+        player.animFrame = 0;
+        player.animTimer = 0;
+
         // Visuals
         const offset = player.facingRight ? 40 : -40;
         spawnParticles({x: player.position.x + 16 + offset, y: player.position.y + 32}, 5, COLORS.YUI_WEAPON, 8);
@@ -301,7 +315,46 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ physicsProfile, fpsLimit
         if (enemy.hitTimer > 0) enemy.hitTimer--;
     });
 
-    // --- 10. Visuals (Lean & Camera) ---
+    // --- 10. ANIMATION STATE MACHINE ---
+    let nextAnim: AnimationKey = 'IDLE';
+
+    if (player.isAttacking) {
+        nextAnim = 'ATTACK';
+    } else if (player.isDashing) {
+        nextAnim = 'DASH';
+    } else if (player.isWallSliding) {
+        nextAnim = 'WALL_SLIDE';
+    } else if (!player.isGrounded) {
+        nextAnim = player.velocity.y < 0 ? 'JUMP' : 'FALL';
+    } else if (Math.abs(player.velocity.x) > 0.5) {
+        nextAnim = 'RUN';
+    } else {
+        nextAnim = 'IDLE';
+    }
+
+    // Transition Logic
+    if (nextAnim !== player.activeAnim) {
+        player.activeAnim = nextAnim;
+        player.animFrame = 0;
+        player.animTimer = 0;
+    } else {
+        // Advance Frame
+        const config = ANIMATION_MANIFEST[player.activeAnim];
+        player.animTimer++;
+        if (player.animTimer >= config.frameDelay) {
+            player.animTimer = 0;
+            player.animFrame++;
+            if (player.animFrame >= config.count) {
+                if (config.loop) {
+                    player.animFrame = 0;
+                } else {
+                    player.animFrame = config.count - 1; // Clamp at end
+                }
+            }
+        }
+    }
+
+    // --- 11. Visuals (Lean & Camera) ---
     const targetLean = (player.velocity.x / profile.runSpeed) * 0.3;
     player.leanAngle += (targetLean - player.leanAngle) * 0.2;
 
@@ -504,17 +557,13 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ physicsProfile, fpsLimit
       ctx.setTransform(1, 0, 0, 1, 0, 0);
 
       // --- Layer 4: Far Background (0.1x) ---
-      // Not Zoomed or only slightly zoomed? Let's just zoom everything for cinematic consistency.
-      // But we need to handle the fillRect logic so edges don't show.
-      
       const gradient = ctx.createLinearGradient(0, 0, 0, height);
       gradient.addColorStop(0, '#020617'); 
       gradient.addColorStop(1, '#1e1b4b'); 
       ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, width, height); // This covers screen 1:1
+      ctx.fillRect(0, 0, width, height); 
 
       // BEGIN ZOOM TRANSFORM
-      // Pivot around center of screen
       ctx.translate(width/2, height/2);
       ctx.scale(zoom, zoom);
       ctx.translate(-width/2, -height/2);
@@ -526,7 +575,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ physicsProfile, fpsLimit
       ctx.translate(farOffset, -(camY * 0.05)); 
 
       ctx.fillStyle = '#1e293b'; 
-      for (let i = -2; i < Math.ceil(width / 800) + 3; i++) { // Render extra for zoom coverage
+      for (let i = -2; i < Math.ceil(width / 800) + 3; i++) {
           const xBase = i * 800;
           ctx.fillRect(xBase + 100, 200, 100, 800);
           ctx.fillRect(xBase + 300, 100, 150, 900);
@@ -608,18 +657,13 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ physicsProfile, fpsLimit
           if (enemy.isDead) continue;
           
           ctx.save();
-          // Hit flash
           if (enemy.hitTimer > 0) {
               ctx.globalCompositeOperation = 'source-over';
               ctx.fillStyle = 'white';
           } else {
               ctx.fillStyle = enemy.color;
           }
-          
-          // Draw Enemy Body
           ctx.fillRect(enemy.position.x, enemy.position.y, enemy.width, enemy.height);
-          
-          // Outline
           ctx.strokeStyle = '#991b1b';
           ctx.lineWidth = 2;
           ctx.strokeRect(enemy.position.x, enemy.position.y, enemy.width, enemy.height);
@@ -630,11 +674,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ physicsProfile, fpsLimit
           ctx.fillRect(enemy.position.x, enemy.position.y - 12, enemy.width, 6);
           ctx.fillStyle = hpPercent > 0.5 ? '#22c55e' : '#ef4444';
           ctx.fillRect(enemy.position.x, enemy.position.y - 12, enemy.width * hpPercent, 6);
-          
           ctx.restore();
       }
 
-      // Player
+      // ----------------------------------------------------------------
+      // PLAYER RENDERING (SPRITE VS PROCEDURAL)
+      // ----------------------------------------------------------------
       const p = state.player;
       const pW = GAME_CONFIG.PLAYER_SIZE.width;
       const pH = GAME_CONFIG.PLAYER_SIZE.height;
@@ -645,104 +690,112 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ physicsProfile, fpsLimit
       ctx.ellipse(p.position.x + pW/2, p.position.y + pH + 5, pW/2, 5, 0, 0, Math.PI*2);
       ctx.fill();
 
-      // Rotation & Drawing Player Context Setup
-      ctx.save();
-      ctx.translate(p.position.x + pW/2, p.position.y + pH);
-      ctx.rotate(p.leanAngle);
-      ctx.translate(-(p.position.x + pW/2), -(p.position.y + pH));
+      // Determine Render Mode
+      const sprite = AssetManager.getFrame(p.activeAnim, p.animFrame);
+      const hasAssets = AssetManager.hasAssets(p.activeAnim);
 
-      // 1. Draw Stowed Weapon (Behind Body)
-      if (!p.isAttacking) {
+      if (hasAssets && sprite) {
+          // --- SPRITE MODE ---
           ctx.save();
-          const weaponX = p.position.x + pW/2;
-          const weaponY = p.position.y + 32; // Mid-back
-          ctx.translate(weaponX, weaponY);
-          // Diagonal angle
-          ctx.rotate(p.facingRight ? -0.5 : 0.5); 
-          ctx.fillStyle = COLORS.YUI_WEAPON;
-          ctx.shadowBlur = 5;
-          ctx.shadowColor = COLORS.YUI_WEAPON;
-          // The weapon stick
-          ctx.fillRect(-2, -35, 4, 70); 
-          ctx.restore();
-      }
-
-      // 2. Draw Player Body
-      if(p.isDashing) {
-          ctx.globalAlpha = 0.5;
-          ctx.fillStyle = COLORS.YUI_ACCENT;
-          ctx.fillRect(p.position.x - p.velocity.x, p.position.y, pW, pH);
-          ctx.globalAlpha = 1.0;
-      }
-
-      ctx.fillStyle = p.color;
-      ctx.fillRect(p.position.x, p.position.y, pW, pH);
-
-      // Body Accents
-      ctx.shadowBlur = 10;
-      ctx.shadowColor = COLORS.YUI_ACCENT;
-      ctx.fillStyle = COLORS.YUI_ACCENT;
-      ctx.fillRect(p.position.x + (p.facingRight ? 18 : 6), p.position.y + 40, 6, 6);
-      ctx.fillRect(p.position.x + (p.facingRight ? 16 : 4), p.position.y + 10, 12, 4);
-      ctx.shadowBlur = 0;
-
-
-      // 3. Draw Attacking Weapon (In Front of Body)
-      if(p.isAttacking) {
-          ctx.save();
-          // Position relative to player center
           const centerX = p.position.x + pW/2;
-          const centerY = p.position.y + pH/2;
+          const bottomY = p.position.y + pH;
           
-          ctx.translate(centerX, centerY);
-          if (!p.facingRight) ctx.scale(-1, 1);
+          ctx.translate(centerX, bottomY);
+          // Scale X for facing (Sprites usually face Right by default)
+          ctx.scale(p.facingRight ? 1 : -1, 1);
+          
+          // Draw Sprite (Centered at bottom feet)
+          // Assuming sprites are reasonably sized, or use source rects if spritesheets (but we use individual files here)
+          // Adjust offset based on your specific PNG dimensions. 
+          // For now, drawing centered on X, anchored at bottom Y.
+          const scale = 1.0; // Adjust if sprites are too big/small
+          ctx.drawImage(sprite, -sprite.width/2 * scale, -sprite.height * scale, sprite.width * scale, sprite.height * scale);
+          
+          ctx.restore();
 
-          const progress = 1 - (p.attackTimer / physicsProfile.attackDurationFrames);
+      } else {
+          // --- FALLBACK PROCEDURAL MODE ---
           
-          // --- DRAW SWORD ---
           ctx.save();
-          // Arc calculation
-          const startAngle = -Math.PI / 2.0; 
-          const endAngle = Math.PI / 3.0;
-          const currentAngle = startAngle + (endAngle - startAngle) * progress;
+          ctx.translate(p.position.x + pW/2, p.position.y + pH);
+          ctx.rotate(p.leanAngle);
+          ctx.translate(-(p.position.x + pW/2), -(p.position.y + pH));
 
-          ctx.rotate(currentAngle);
-          
-          // Blade
-          ctx.fillStyle = COLORS.YUI_WEAPON;
+          // 1. Draw Stowed Weapon (Behind Body)
+          if (!p.isAttacking) {
+              ctx.save();
+              const weaponX = p.position.x + pW/2;
+              const weaponY = p.position.y + 32; 
+              ctx.translate(weaponX, weaponY);
+              ctx.rotate(p.facingRight ? -0.5 : 0.5); 
+              ctx.fillStyle = COLORS.YUI_WEAPON;
+              ctx.shadowBlur = 5;
+              ctx.shadowColor = COLORS.YUI_WEAPON;
+              ctx.fillRect(-2, -35, 4, 70); 
+              ctx.restore();
+          }
+
+          // 2. Draw Body
+          if(p.isDashing) {
+              ctx.globalAlpha = 0.5;
+              ctx.fillStyle = COLORS.YUI_ACCENT;
+              ctx.fillRect(p.position.x - p.velocity.x, p.position.y, pW, pH);
+              ctx.globalAlpha = 1.0;
+          }
+
+          ctx.fillStyle = p.color;
+          ctx.fillRect(p.position.x, p.position.y, pW, pH);
+
           ctx.shadowBlur = 10;
-          ctx.shadowColor = COLORS.YUI_WEAPON;
-          
-          // Draw Handle
-          ctx.fillRect(0, -4, 20, 8);
-          // Draw Blade (Longer)
-          ctx.fillRect(20, -2, 70, 4); 
-          
-          // Crossguard
-          ctx.fillStyle = '#cbd5e1'; 
-          ctx.fillRect(18, -10, 4, 20);
-          
-          ctx.restore();
+          ctx.shadowColor = COLORS.YUI_ACCENT;
+          ctx.fillStyle = COLORS.YUI_ACCENT;
+          ctx.fillRect(p.position.x + (p.facingRight ? 18 : 6), p.position.y + 40, 6, 6);
+          ctx.fillRect(p.position.x + (p.facingRight ? 16 : 4), p.position.y + 10, 12, 4);
+          ctx.shadowBlur = 0;
 
-          // Slash VFX
-          ctx.shadowBlur = 15;
-          ctx.shadowColor = COLORS.YUI_WEAPON;
-          ctx.strokeStyle = COLORS.YUI_WEAPON;
-          ctx.lineWidth = 4;
-          
-          ctx.beginPath();
-          ctx.arc(0, 0, 80, currentAngle - 0.5, currentAngle + 0.1); 
-          ctx.stroke();
 
-          // Inner fill
-          ctx.globalAlpha = 0.3 * (1-progress);
-          ctx.fillStyle = COLORS.YUI_WEAPON;
-          ctx.fill();
-          
-          ctx.restore();
+          // 3. Draw Attacking Weapon (In Front of Body)
+          if(p.isAttacking) {
+              ctx.save();
+              const centerX = p.position.x + pW/2;
+              const centerY = p.position.y + pH/2;
+              
+              ctx.translate(centerX, centerY);
+              if (!p.facingRight) ctx.scale(-1, 1);
+
+              const progress = 1 - (p.attackTimer / physicsProfile.attackDurationFrames);
+              
+              // Sword
+              ctx.save();
+              const startAngle = -Math.PI / 2.0; 
+              const endAngle = Math.PI / 3.0;
+              const currentAngle = startAngle + (endAngle - startAngle) * progress;
+
+              ctx.rotate(currentAngle);
+              ctx.fillStyle = COLORS.YUI_WEAPON;
+              ctx.shadowBlur = 10;
+              ctx.shadowColor = COLORS.YUI_WEAPON;
+              ctx.fillRect(0, -4, 20, 8);
+              ctx.fillRect(20, -2, 70, 4); 
+              ctx.fillStyle = '#cbd5e1'; 
+              ctx.fillRect(18, -10, 4, 20);
+              ctx.restore();
+
+              // Slash VFX
+              ctx.shadowBlur = 15;
+              ctx.shadowColor = COLORS.YUI_WEAPON;
+              ctx.strokeStyle = COLORS.YUI_WEAPON;
+              ctx.lineWidth = 4;
+              ctx.beginPath();
+              ctx.arc(0, 0, 80, currentAngle - 0.5, currentAngle + 0.1); 
+              ctx.stroke();
+              ctx.globalAlpha = 0.3 * (1-progress);
+              ctx.fillStyle = COLORS.YUI_WEAPON;
+              ctx.fill();
+              ctx.restore();
+          }
+          ctx.restore(); // End Player Transform
       }
-
-      ctx.restore(); // End Player Transform
 
       // Particles
       for(const part of state.particles) {
@@ -775,7 +828,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({ physicsProfile, fpsLimit
           ctx.lineWidth = 12;
           ctx.strokeStyle = '#020617';
           ctx.stroke();
-
           ctx.fillRect(xBase + 900, -100, 150, height + 400);
       }
       ctx.restore();

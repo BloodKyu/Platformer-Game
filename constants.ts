@@ -1,4 +1,4 @@
-import { PhysicsProfile } from './types';
+import { PhysicsProfile, AnimationKey } from './types';
 
 // THE PHYSICS PROFILE
 // Tuned for "Fluid Precision".
@@ -53,3 +53,37 @@ export const COLORS = {
   PARTICLE_SPARK: '#f59e0b', 
   PARTICLE_ENERGY: '#60a5fa', 
 };
+
+// ------------------------------------------------------------------
+// SPRITE ASSET CONFIGURATION
+// ------------------------------------------------------------------
+export const ANIMATION_MANIFEST: Record<AnimationKey, { 
+  folder: string; 
+  prefix: string; 
+  count: number; 
+  frameDelay: number; 
+  loop: boolean;
+  pad?: number;      // Number of digits for zero-padding (e.g., 3 for '001')
+  startAt?: number;  // Starting index number (e.g., 1 for '001')
+}> = {
+  // Corrected path: assets/animations/run/YuiRun_001.png
+  RUN: { 
+    folder: 'run', 
+    prefix: 'YuiRun_', 
+    count: 1, 
+    frameDelay: 4, 
+    loop: true, 
+    pad: 3, 
+    startAt: 1 
+  },
+  
+  // Standard configs for others (will fallback to procedural if files missing)
+  IDLE: { folder: 'idle', prefix: 'idle_', count: 6, frameDelay: 8, loop: true },
+  JUMP: { folder: 'jump', prefix: 'jump_', count: 4, frameDelay: 4, loop: false },
+  FALL: { folder: 'fall', prefix: 'fall_', count: 4, frameDelay: 4, loop: true },
+  DASH: { folder: 'dash', prefix: 'dash_', count: 4, frameDelay: 2, loop: true },
+  ATTACK: { folder: 'attack', prefix: 'attack_', count: 6, frameDelay: 2, loop: false },
+  WALL_SLIDE: { folder: 'wall', prefix: 'wall_', count: 2, frameDelay: 10, loop: true },
+};
+
+export const ASSET_ROOT = 'assets/animations';

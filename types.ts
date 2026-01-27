@@ -45,6 +45,9 @@ export interface Rect {
   height: number;
 }
 
+// Animation Types
+export type AnimationKey = 'IDLE' | 'RUN' | 'JUMP' | 'FALL' | 'DASH' | 'ATTACK' | 'WALL_SLIDE';
+
 export interface PlayerState {
   position: Vector2;
   velocity: Vector2;
@@ -58,6 +61,11 @@ export interface PlayerState {
   isAttacking: boolean;   // NEW: Combat state
   facingRight: boolean;
   
+  // Animation State
+  activeAnim: AnimationKey;
+  animFrame: number;
+  animTimer: number; // Counts up to frameDelay
+
   // Timers (Frames)
   dashTimer: number;         // Active dash duration
   dashCooldownTimer: number; // Time until next dash
