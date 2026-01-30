@@ -10,7 +10,7 @@ interface ProfilerOverlayProps {
 export const ProfilerOverlay: React.FC<ProfilerOverlayProps> = ({ stats }) => {
   const [position, setPosition] = useState({ x: 20, y: 80 });
   const [isDragging, setIsDragging] = useState(false);
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(true);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [diagnostic, setDiagnostic] = useState<string | null>(null);
   const [isDiagnosing, setIsDiagnosing] = useState(false);

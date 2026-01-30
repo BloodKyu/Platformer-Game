@@ -55,7 +55,6 @@ export class InputSystem {
       case 'ArrowRight':
       case 'KeyD':
         return InputCommand.RIGHT;
-      case 'Space':
       case 'KeyW':
       case 'ArrowUp':
         return InputCommand.JUMP;
@@ -63,9 +62,9 @@ export class InputSystem {
       case 'KeyS':
         return InputCommand.DOWN;
       case 'ShiftLeft':
-      case 'KeyK':
+      case 'ShiftRight':
         return InputCommand.DASH;
-      case 'KeyJ':
+      case 'Space':
         return InputCommand.ATTACK;
       default:
         return null;

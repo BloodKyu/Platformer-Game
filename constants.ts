@@ -15,7 +15,7 @@ export const DEFAULT_PHYSICS_PROFILE: PhysicsProfile = {
 
   // Jumping
   jumpForce: 18.0,
-  doubleJumpForce: 16.0,   // NEW: Slightly weaker than main jump
+  doubleJumpForce: 16.0,   // Slightly weaker than main jump
   jumpCutMultiplier: 0.4,  // Variable jump height (release to drop)
   jumpBufferFrames: 5,     // 5 frames (~80ms) forgiveness
   coyoteFrames: 6,         // 6 frames (~100ms) ledge forgiveness
@@ -28,10 +28,16 @@ export const DEFAULT_PHYSICS_PROFILE: PhysicsProfile = {
   dashSpeed: 24.0,
   dashDurationFrames: 8,   // Short, punchy dash
   dashCooldownFrames: 30,  // Half second cooldown
+  maxDashes: 3,            // NEW: Triple Dash enabled
 
   // Combat
   attackDurationFrames: 12,
-  attackCooldownFrames: 18,
+  attackCooldownFrames: 14, // Slightly faster to allow combos
+  attackLungeSpeed: 12.0,   // Forward velocity impulse on attack start (Step-in)
+  airLaunchForce: 14.0,     // Self-launch velocity
+  enemyLaunchForce: 18.0,   // Enemy launch velocity
+  comboWindowFrames: 45,    // ~0.75 seconds to input next animation
+  comboKeepAliveFrames: 60, // ~1 Second to keep the hit counter alive
 };
 
 export const GAME_CONFIG = {
@@ -40,6 +46,21 @@ export const GAME_CONFIG = {
   CANVAS_HEIGHT: 720,
   PLAYER_SIZE: { width: 32, height: 64 }, 
   DEBUG_MODE: true,
+  
+  // Phase 1: Gameplay Config
+  PLAYER_MAX_HEALTH: 100,
+  PLAYER_I_FRAMES: 90, // 1.5 seconds of invincibility
+  KILL_PLANE_Y: 1500,  // Y position where player dies
+};
+
+export const AI_CONFIG = {
+  PATROL_SPEED: 2.0,
+  CHASE_SPEED: 4.5,
+  DETECTION_RANGE: 300,
+  ATTACK_RANGE: 60,
+  ATTACK_CHARGE: 40,    // NEW: 0.66s telegraph before swing
+  ATTACK_COOLDOWN: 60,
+  ATTACK_DURATION: 20,
 };
 
 export const COLORS = {
@@ -52,6 +73,13 @@ export const COLORS = {
   BACKGROUND_FAR: '#020617', 
   PARTICLE_SPARK: '#f59e0b', 
   PARTICLE_ENERGY: '#60a5fa', 
+  ENEMY_PATROL: '#ef4444',
+  ENEMY_CHASE: '#dc2626',
+  ENEMY_ATTACK: '#991b1b',
+  
+  // NEW ENEMY COLORS
+  ENEMY_TURRET: '#f97316', // Orange
+  ENEMY_FLYER: '#a855f7',  // Purple
 };
 
 // ------------------------------------------------------------------
@@ -66,25 +94,152 @@ export const ANIMATION_MANIFEST: Record<AnimationKey, {
   pad?: number;      // Number of digits for zero-padding (e.g., 3 for '001')
   startAt?: number;  // Starting index number (e.g., 1 for '001')
 }> = {
-  // Configured to match: run/YuiRun_001.png
+  // 8 Frame Run Cycle (Yui_Run_0001.png to Yui_Run_0008.png)
   RUN: { 
-    folder: 'run', 
-    prefix: 'YuiRun_', 
-    count: 1, 
+    folder: 'run',      
+    prefix: 'Yui_Run_',  
+    count: 8,          
     frameDelay: 4, 
     loop: true, 
-    pad: 3, 
+    pad: 4, 
     startAt: 1 
   },
   
-  // Standard configs for others (will fallback to procedural if files missing)
-  IDLE: { folder: 'idle', prefix: 'idle_', count: 6, frameDelay: 8, loop: true },
-  JUMP: { folder: 'jump', prefix: 'jump_', count: 4, frameDelay: 4, loop: false },
-  FALL: { folder: 'fall', prefix: 'fall_', count: 4, frameDelay: 4, loop: true },
-  DASH: { folder: 'dash', prefix: 'dash_', count: 4, frameDelay: 2, loop: true },
-  ATTACK: { folder: 'attack', prefix: 'attack_', count: 6, frameDelay: 2, loop: false },
-  WALL_SLIDE: { folder: 'wall', prefix: 'wall_', count: 2, frameDelay: 10, loop: true },
+  // Standardized IDLE (Yui_Idle_0001.png)
+  IDLE: { 
+    folder: 'idle', 
+    prefix: 'Yui_Idle_', 
+    count: 1, 
+    frameDelay: 8, 
+    loop: true,
+    pad: 4,
+    startAt: 1 
+  },
+
+  // UPDATED: Jump (Yui_Jump_0001.png)
+  JUMP: { 
+    folder: 'jump', 
+    prefix: 'Yui_Jump_', 
+    count: 1, 
+    frameDelay: 4, 
+    loop: false,
+    pad: 4,
+    startAt: 1 
+  },
+
+  // UPDATED: Fall (Expects Yui_Falling_0001.png in 'falling' folder)
+  FALL: { 
+    folder: 'falling', 
+    prefix: 'Yui_Falling_', 
+    count: 1, 
+    frameDelay: 4, 
+    loop: true,
+    pad: 4,
+    startAt: 1 
+  },
+
+  // UPDATED: Dash (Uses Run Frame 5 as placeholder)
+  DASH: { 
+    folder: 'run', 
+    prefix: 'Yui_Run_', 
+    count: 1, 
+    frameDelay: 4, 
+    loop: true,
+    pad: 4,
+    startAt: 5
+  },
+
+  // Combo 1: Attack A (Yui_Attack_A_0001.png)
+  ATTACK: { 
+    folder: 'attack_a', 
+    prefix: 'Yui_Attack_A_', 
+    count: 1, 
+    frameDelay: 4, 
+    loop: false,
+    pad: 4,
+    startAt: 1 
+  },
+
+  // Combo 2: Attack B (Inside attack_b folder)
+  ATTACK_B: { 
+    folder: 'attack_b', 
+    prefix: 'Yui_Attack_B_', 
+    count: 1, 
+    frameDelay: 4, 
+    loop: false,
+    pad: 4,
+    startAt: 1 
+  },
+
+  // Combo 3: Attack C (Inside attack_c folder)
+  ATTACK_C: { 
+    folder: 'attack_c', 
+    prefix: 'Yui_Attack_C_', 
+    count: 1, 
+    frameDelay: 4, 
+    loop: false,
+    pad: 4,
+    startAt: 1 
+  },
+
+  // Air Launcher (Up+Attack)
+  ATTACK_AIR_A: {
+    folder: 'attack_air_a',
+    prefix: 'Yui_Attack_Air_A_',
+    count: 1,
+    frameDelay: 4,
+    loop: false,
+    pad: 4,
+    startAt: 1
+  },
+
+  // NEW: Dash Attack (Dash + Attack)
+  ATTACK_DASH_A: {
+    folder: 'attack_dash_a',
+    prefix: 'Yui_Attack_Dash_A_',
+    count: 1,
+    frameDelay: 4,
+    loop: false,
+    pad: 4,
+    startAt: 1
+  },
+
+  // VFX: Blue Slash Energy
+  // Path on Repo: public/assets/vfx/Slash_A/Slash_001.png
+  VFX_SLASH: {
+    folder: '../vfx/Slash_A', 
+    prefix: 'Slash_',
+    count: 12,
+    frameDelay: 1,
+    loop: false,
+    pad: 3, 
+    startAt: 1
+  },
+
+  // NEW VFX: Hit Impact
+  // Path on Repo: public/assets/vfx/Hit_A/Hit_001.png
+  VFX_HIT: {
+    folder: '../vfx/Hit_A',
+    prefix: 'Hit_',
+    count: 6,
+    frameDelay: 2,
+    loop: false,
+    pad: 3,
+    startAt: 1
+  },
+
+  // Wall Slide / Idle
+  // Path on Repo: public/assets/animations/idle_wall/Yui_IdleWall_0001.png
+  WALL_SLIDE: { 
+    folder: 'idle_wall', 
+    prefix: 'Yui_IdleWall_', 
+    count: 1, 
+    frameDelay: 10, 
+    loop: true, 
+    pad: 4,
+    startAt: 1
+  },
 };
 
-// Use Raw GitHub User Content directly
-export const ASSET_ROOT = 'https://raw.githubusercontent.com/BloodKyu/Platformer-Game/main/public/assets/animations';
+// DIRECT GITHUB RAW LINK (Bypasses CDN Cache)
+export const ASSET_ROOT = `https://raw.githubusercontent.com/BloodKyu/Platformer-Game/main/public/assets/animations`;
