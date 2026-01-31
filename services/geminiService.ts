@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { PhysicsProfile, PerformanceStats } from '../types';
 
@@ -23,7 +22,6 @@ const updatePhysicsDeclaration = {
       wallSlideSpeed: { type: Type.NUMBER, description: 'Max wall slide speed (1 - 10)' },
       attackDurationFrames: { type: Type.NUMBER, description: 'Duration of attack hitbox (5 - 30)' },
       attackCooldownFrames: { type: Type.NUMBER, description: 'Time between attacks (10 - 60)' },
-      attackLungeSpeed: { type: Type.NUMBER, description: 'Forward velocity impulse when attacking (0 - 30)' },
     },
   },
 };
